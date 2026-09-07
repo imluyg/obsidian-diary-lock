@@ -1,0 +1,26 @@
+.diary-lock-row {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.diary-lock-body {
+	color: var(--text-muted);
+	line-height: 1.5;
+}
+
+.diary-lock-input {
+	width: 100%;
+	min-height: 120px;
+	resize: vertical;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-small);
+	line-height: 1.5;
+}
+
+/* 锁定的日记：阅读视图顶部的「属性」块不可点、不可改 */
+.diary-lock-locked .metadata-container {
+	pointer-events: none;
+	opacity: 0.85;
+}

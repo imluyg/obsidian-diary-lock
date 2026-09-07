@@ -1,0 +1,10 @@
+{
+  "id": "diary-lock",
+  "name": "日记锁",
+  "version": "1.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "把过去的日记锁成只读：打开不打扰，主动编辑时退回阅读视图并可解锁；支持追加式写入；锁定的日记属性会被禁用并自动还原。日记文件夹与日期格式跟随 Obsidian 自带的日记插件。",
+  "author": "imluyg",
+  "authorUrl": "https://github.com/imluyg",
+  "isDesktopOnly": false
+}

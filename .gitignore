@@ -1,0 +1,13 @@
+# 这个仓库只跟踪日记锁插件，库里的笔记一律不进版本管理。
+
+*
+!.gitignore
+
+# 一层层把插件目录放出来
+!/.obsidian/
+!/.obsidian/plugins/
+!/.obsidian/plugins/diary-lock/
+!/.obsidian/plugins/diary-lock/**
+
+# 运行时设置因库而异，不随仓库分发
+/.obsidian/plugins/diary-lock/data.json
