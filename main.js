@@ -170,10 +170,31 @@ class DiaryLockPlugin extends Plugin {
 				this.guardFrontmatter(file);
 			})
 		);
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				this.onFileDeleted(file);
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				this.onFileRenamed(file, oldPath);
+			})
+		);
 
 		this.addRibbonIcon('pencil', '追加一条日记', () => {
 			this.openAppendForCurrent();
 		});
+		// 手机上没有状态栏，给一个能点到锁的入口
+		this.addRibbonIcon('lock', '锁定 / 解锁当前日记', () => {
+			this.toggleLockCurrent();
+		});
+
+		// 第二道拦截：不依赖 layout-change，直接吃掉锁定日记里的 Ctrl/Cmd+E
+		if (typeof document !== 'undefined') {
+			this.registerDomEvent(document, 'keydown', (e) => {
+				this.onKeyDown(e);
+			});
+		}
 
 		this.addCommand({
 			id: 'toggle-lock',
@@ -288,9 +309,13 @@ class DiaryLockPlugin extends Plugin {
 		if (!file || file.extension !== 'md') return false;
 		const key = this.diaryKey(file);
 		if (!key) return false;
-		// 日期格式由日记插件决定，YYYY-MM-DD / YYYY/MM/DD / YYYY/MM/YYYY-MM-DD 都认
-		const parsed = momentLib(key, this.diaryConfig().format, true);
-		return Boolean(parsed && parsed.isValid());
+		const format = this.diaryConfig().format;
+		const parsed = momentLib(key, format, true);
+		if (!parsed || !parsed.isValid()) return false;
+		// 再按同一格式格式化回去逐字比对。格式里有重复 token（比如 YYYY/MM/YYYY-MM-DD）
+		// 时解析结果未必可信，round-trip 才能确定这个路径确实是那一天
+		if (typeof parsed.format !== 'function') return true;
+		return parsed.format(format) === key;
 	}
 
 	todayKey() {
@@ -399,6 +424,49 @@ class DiaryLockPlugin extends Plugin {
 				this.openedAt.set(leaves[i], Date.now());
 			}
 		}
+	}
+
+	onFileDeleted(file) {
+		if (!file) return;
+		this.snapshots.delete(file.path);
+		this.notified.delete(file.path);
+		this.recentUnlock.delete(file.path);
+	}
+
+	onFileRenamed(file, oldPath) {
+		if (!file) return;
+		if (this.snapshots.has(oldPath)) {
+			const snap = this.snapshots.get(oldPath);
+			this.snapshots.delete(oldPath);
+			this.snapshots.set(file.path, snap);
+		}
+		this.notified.delete(oldPath);
+		this.recentUnlock.delete(oldPath);
+	}
+
+	onKeyDown(e) {
+		if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+		if (e.key !== 'e' && e.key !== 'E') return;
+
+		const target = e.target;
+		if (
+			target &&
+			(target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.isContentEditable)
+		) {
+			return;
+		}
+
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const file = view ? view.file : null;
+		if (!file || !this.shouldLock(file)) return;
+		if (this.isUnlocked(view.leaf, file)) return;
+
+		e.preventDefault();
+		e.stopPropagation();
+		this.hintLocked(file);
+		this.queue();
 	}
 
 	hintLocked(file) {
