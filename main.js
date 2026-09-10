@@ -138,6 +138,7 @@ class DiaryLockPlugin extends Plugin {
 		this.timer2 = null;
 		this.lastMode = new WeakMap();
 		this.openedAt = new WeakMap();
+		this.forcedMode = new WeakMap();
 		this.notified = new Set();
 		this.snapshots = new Map();
 		this.recentUnlock = new Map();
@@ -385,13 +386,24 @@ class DiaryLockPlugin extends Plugin {
 
 					const locked = this.shouldLock(file) && !this.isUnlocked(leaf, file);
 					this.markLockedView(view, locked);
-					if (!locked) continue;
+					if (!locked) {
+						// Obsidian 的阅读/编辑模式是跟标签页走的，不是跟文件走。
+						// 被我们强制切过阅读视图的标签页，切到别的笔记时要把模式还原回去
+						this.restoreMode(leaf, view, file);
+						continue;
+					}
 					this.ensureSnapshot(file);
 
 					const mode = this.modeOf(view);
 					if (mode === 'preview') {
 						this.lastMode.set(leaf, 'preview');
 						continue;
+					}
+
+					// 记下强制之前用户本来在哪个模式，离开这篇时好还原
+					const forced = this.forcedMode.get(leaf);
+					if (!forced || forced.path !== file.path) {
+						this.forcedMode.set(leaf, { path: file.path, prevMode: mode });
 					}
 
 					// 先退回阅读视图：任何时候都不留出可编辑的窗口
@@ -424,6 +436,22 @@ class DiaryLockPlugin extends Plugin {
 				this.openedAt.set(leaves[i], Date.now());
 			}
 		}
+	}
+
+	restoreMode(leaf, view, file) {
+		const forced = this.forcedMode.get(leaf);
+		if (!forced) return;
+		// 还停在被强制的那篇上，不动
+		if (forced.path === file.path) return;
+
+		this.forcedMode.delete(leaf);
+
+		// 用户已经自己切过模式，就别再插手
+		if (this.modeOf(view) !== 'preview') return;
+		// 强制之前本来就是阅读视图，那保持阅读视图
+		if (forced.prevMode === 'preview') return;
+
+		this.setMode(view, 'source');
 	}
 
 	onFileDeleted(file) {
