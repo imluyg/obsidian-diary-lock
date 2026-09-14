@@ -24,3 +24,8 @@
 	pointer-events: none;
 	opacity: 0.85;
 }
+
+/* 标题栏的锁：解锁状态用强调色提醒「容易忘了重新锁上」 */
+.diary-lock-header.is-unlocked {
+	color: var(--text-accent);
+}

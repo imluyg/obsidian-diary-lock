@@ -8,6 +8,7 @@ const Notice = obsidian.Notice;
 const Modal = obsidian.Modal;
 const MarkdownView = obsidian.MarkdownView;
 const normalizePath = obsidian.normalizePath;
+const setIcon = obsidian.setIcon;
 
 const momentLib = obsidian.moment || window.moment;
 
@@ -21,7 +22,7 @@ const DEFAULT_SETTINGS = {
 	protectFrontmatter: true,
 	confirmUnlock: true,
 	lockHint: true,
-	statusBar: true,
+	statusBar: false,
 };
 
 const FALLBACK_DATE_FORMAT = 'YYYY-MM-DD';
@@ -147,6 +148,7 @@ class DiaryLockPlugin extends Plugin {
 		this.statusEl.addClass('diary-lock-status');
 		this.statusEl.style.cursor = 'pointer';
 		this.statusEl.style.display = 'none';
+		this.headerEls = new WeakMap();
 		this.registerDomEvent(this.statusEl, 'click', () => {
 			this.toggleLockCurrent();
 		});
@@ -184,10 +186,6 @@ class DiaryLockPlugin extends Plugin {
 
 		this.addRibbonIcon('pencil', '追加一条日记', () => {
 			this.openAppendForCurrent();
-		});
-		// 手机上没有状态栏，给一个能点到锁的入口
-		this.addRibbonIcon('lock', '锁定 / 解锁当前日记', () => {
-			this.toggleLockCurrent();
 		});
 
 		// 第二道拦截：不依赖 layout-change，直接吃掉锁定日记里的 Ctrl/Cmd+E
@@ -232,8 +230,12 @@ class DiaryLockPlugin extends Plugin {
 		}
 		const leaves = this.app.workspace.getLeavesOfType('markdown');
 		for (let i = 0; i < leaves.length; i++) {
-			this.markLockedView(leaves[i].view, false);
+			const view = leaves[i].view;
+			const el = view ? this.headerEls.get(view) : null;
+			if (el) el.remove();
+			this.markLockedView(view, false);
 		}
+		this.headerEls = new WeakMap();
 	}
 
 	async loadSettings() {
@@ -504,7 +506,7 @@ class DiaryLockPlugin extends Plugin {
 		new Notice(
 			'这篇日记已锁定（' +
 				file.basename +
-				'）。想改的话点右下角 🔒 解锁编辑；只想补一句就用「追加一条日记」',
+				'）。想改的话点标题栏的 🔒 解锁编辑；只想补一句就用「追加一条日记」',
 			4000
 		);
 	}
@@ -679,6 +681,12 @@ class DiaryLockPlugin extends Plugin {
 			new Notice('今天的日记不需要锁定');
 			return;
 		}
+		this.toggleLockForView(view);
+	}
+
+	toggleLockForView(view) {
+		const file = view ? view.file : null;
+		if (!file || !this.isDiaryFile(file) || !this.shouldLock(file)) return;
 		if (this.isUnlocked(view.leaf, file)) {
 			this.unlocked.delete(view.leaf);
 			this.setMode(view, 'preview');
@@ -689,7 +697,44 @@ class DiaryLockPlugin extends Plugin {
 		}
 	}
 
+	// 锁的状态属于「这篇笔记」，所以放在笔记标题栏，紧挨着编辑按钮
+	updateHeaderAction(view) {
+		const file = view ? view.file : null;
+		const show = !!(file && this.isDiaryFile(file) && this.shouldLock(file));
+		let el = this.headerEls.get(view);
+		if (!show) {
+			if (el) {
+				el.remove();
+				this.headerEls.delete(view);
+			}
+			return;
+		}
+		if (!el) {
+			el = view.addAction('lock', '已锁定', () => this.toggleLockForView(view));
+			el.addClass('diary-lock-header');
+			// 排到编辑按钮左边
+			if (el.parentElement) el.parentElement.prepend(el);
+			this.headerEls.set(view, el);
+		}
+		const unlocked = this.isUnlocked(view.leaf, file);
+		setIcon(el, unlocked ? 'lock-open' : 'lock');
+		el.classList.toggle('is-unlocked', unlocked);
+		el.setAttribute(
+			'aria-label',
+			unlocked ? '已解锁：点击重新锁定' : '已锁定：点击解锁编辑'
+		);
+	}
+
+	refreshHeaders() {
+		const leaves = this.app.workspace.getLeavesOfType('markdown');
+		for (let i = 0; i < leaves.length; i++) {
+			const view = leaves[i].view;
+			if (view) this.updateHeaderAction(view);
+		}
+	}
+
 	refreshStatus() {
+		this.refreshHeaders();
 		const el = this.statusEl;
 		if (!el) return;
 		if (!this.settings.statusBar) {
@@ -875,7 +920,7 @@ class DiaryLockSettingTab extends PluginSettingTab {
 
 		new Setting(el)
 			.setName('解锁时二次确认')
-			.setDesc('点状态栏的锁、或执行「锁定 / 解锁当前日记」时才弹框确认。打开笔记不会弹。')
+			.setDesc('点标题栏的锁、或执行「锁定 / 解锁当前日记」时才弹框确认。打开笔记不会弹。')
 			.addToggle((t) =>
 				t.setValue(this.plugin.settings.confirmUnlock).onChange(async (v) => {
 					this.plugin.settings.confirmUnlock = v;
@@ -905,7 +950,7 @@ class DiaryLockSettingTab extends PluginSettingTab {
 
 		new Setting(el)
 			.setName('状态栏图标')
-			.setDesc('在右下角显示 🔒 / 🔓，点击可锁定或解锁。')
+			.setDesc('默认关闭。打开后在右下角额外显示 🔒 / 🔓，点击可锁定或解锁；标题栏的锁图标始终可用。')
 			.addToggle((t) =>
 				t.setValue(this.plugin.settings.statusBar).onChange(async (v) => {
 					this.plugin.settings.statusBar = v;
